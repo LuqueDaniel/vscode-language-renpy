@@ -20,12 +20,15 @@ import { Tokenizer } from "./tokenizer/tokenizer";
 import { signatureProvider } from "./signature";
 import { LogLevel, intializeLoggingSystems, logMessage, logToast, updateStatusBar } from "./logger";
 import { Configuration } from "./configuration";
+import { testParser } from "./parser/parser-test";
 
 export async function activate(context: ExtensionContext): Promise<void> {
     intializeLoggingSystems(context);
     updateStatusBar("$(sync~spin) Loading Ren'Py extension...");
 
     Configuration.initialize(context);
+    
+    testParser();
 
     // Subscribe to supported language features
     context.subscriptions.push(hoverProvider);
