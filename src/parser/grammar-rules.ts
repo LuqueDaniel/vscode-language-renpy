@@ -1,6 +1,6 @@
 import { CharacterTokenType, LiteralTokenType } from "../tokenizer/renpy-tokens";
 import { ASTNode, ExpressionNode, LiteralNode } from "./ast-nodes";
-import { ParserState } from "./parser";
+import { DocumentParser } from "./parser";
 
 export enum Associativity {
     Left,
@@ -8,8 +8,8 @@ export enum Associativity {
 }
 
 export abstract class Rule {
-    public abstract test(state: ParserState): boolean;
-    public abstract parse(state: ParserState): ASTNode | null;
+    public abstract test(state: DocumentParser): boolean;
+    public abstract parse(state: DocumentParser): ASTNode | null;
 }
 
 /**
@@ -21,7 +21,7 @@ export abstract class Rule {
 export class ExpressionRule extends Rule {
     rules: Rule[] = [new ParenthesizedExpressionRule(), new LiteralRule()];
 
-    public test(state: ParserState): boolean {
+    public test(state: DocumentParser): boolean {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return true;
@@ -31,7 +31,7 @@ export class ExpressionRule extends Rule {
         return false;
     }
 
-    public parse(state: ParserState): ExpressionNode | null {
+    public parse(state: DocumentParser): ExpressionNode | null {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return rule.parse(state) as ExpressionNode;
@@ -48,20 +48,20 @@ export class ExpressionRule extends Rule {
  *   ;
  */
 export class ParenthesizedExpressionRule extends Rule {
-    public test(state: ParserState): boolean {
-        return state.peekToken().type === CharacterTokenType.OpenParentheses;
+    public test(state: DocumentParser): boolean {
+        return state.test(CharacterTokenType.OpenParentheses);
     }
 
-    public parse(state: ParserState): ExpressionNode | null {
-        state.popToken();
+    public parse(state: DocumentParser): ExpressionNode | null {
+        state.next();
 
         const expression = state.parseExpression();
         if (expression === null) {
             return null;
         }
 
-        const closeParen = state.popToken();
-        if (!closeParen || closeParen.type !== CharacterTokenType.CloseParentheses) {
+        state.next();
+        if (state.require(CharacterTokenType.CloseParentheses)) {
             return null;
         }
 
@@ -125,7 +125,7 @@ export class ParenthesizedExpressionRule extends Rule {
 export class LiteralRule extends Rule {
     rules: Rule[] = [new IntegerLiteralRule(), new FloatLiteralRule()];
 
-    public test(state: ParserState): boolean {
+    public test(state: DocumentParser): boolean {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return true;
@@ -135,7 +135,7 @@ export class LiteralRule extends Rule {
         return false;
     }
 
-    public parse(state: ParserState): LiteralNode | null {
+    public parse(state: DocumentParser): LiteralNode | null {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return rule.parse(state) as LiteralNode;
@@ -152,13 +152,13 @@ export class LiteralRule extends Rule {
  *   ;
  */
 export class IntegerLiteralRule extends Rule {
-    public test(state: ParserState): boolean {
-        return state.peekToken().type === LiteralTokenType.Integer;
+    public test(state: DocumentParser): boolean {
+        return state.test(LiteralTokenType.Integer);
     }
 
-    public parse(state: ParserState): LiteralNode | null {
-        const token = state.popTokenChecked(LiteralTokenType.Integer);
-        return new LiteralNode(token.value);
+    public parse(state: DocumentParser): LiteralNode | null {
+        state.require(LiteralTokenType.Integer);
+        return new LiteralNode(state.currentTokenValue());
     }
 }
 
@@ -168,13 +168,13 @@ export class IntegerLiteralRule extends Rule {
  * ;
  * */
 export class FloatLiteralRule extends Rule {
-    public test(state: ParserState): boolean {
-        return state.peekToken().type === LiteralTokenType.Float;
+    public test(state: DocumentParser): boolean {
+        return state.test(LiteralTokenType.Float);
     }
 
-    public parse(state: ParserState): LiteralNode | null {
-        const token = state.popTokenChecked(LiteralTokenType.Float);
-        return new LiteralNode(token.value);
+    public parse(state: DocumentParser): LiteralNode | null {
+        state.require(LiteralTokenType.Float);
+        return new LiteralNode(state.currentTokenValue());
     }
 }
 

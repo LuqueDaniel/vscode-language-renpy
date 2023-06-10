@@ -1,23 +1,28 @@
-import { ExpressionRule } from "./grammar-rules";
-import { ParserState } from "./parser";
-import { LiteralTokenType, OperatorTokenType, TokenType } from "../tokenizer/renpy-tokens";
-
-export class Token {
-    public type: TokenType;
-    public value: any;
-
-    constructor(type: TokenType, value: any) {
-        this.type = type;
-        this.value = value;
-    }
-}
+import { DocumentParser } from "./parser";
+import { KeywordTokenType } from "../tokenizer/renpy-tokens";
+import { window } from "vscode";
+import { DefineStatementRule } from "./renpy-grammar-rules";
 
 export function testParser() {
-    const tokens = [new Token(LiteralTokenType.Integer, 2), new Token(OperatorTokenType.Plus, "+"), new Token(LiteralTokenType.Integer, 4), new Token(OperatorTokenType.Multiply, "*"), new Token(LiteralTokenType.Integer, 3)];
+    const activeEditor = window.activeTextEditor;
+    if (!activeEditor) {
+        return;
+    }
 
-    const state = new ParserState(tokens);
-    const rule = new ExpressionRule();
+    const state = new DocumentParser(activeEditor.document);
+
+    while (state.hasNext()) {
+        state.skipEmptyLines();
+
+        if (DefineStatementRule.test(state)) {
+            DefineStatementRule.parse(state);
+        }
+
+        state.next();
+    }
+
+    /*const rule = new ExpressionRule();
     const ast = rule.parse(state);
 
-    console.log(JSON.stringify(ast, null, 2));
+    logCatMessage(LogLevel.Info, LogCategory.Parser, JSON.stringify(ast, null, 2), true);*/
 }

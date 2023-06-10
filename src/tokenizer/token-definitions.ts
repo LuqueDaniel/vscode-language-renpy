@@ -1,7 +1,9 @@
-import { Position, Range as VSRange } from "vscode";
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+import { Position, TextDocument, Range as VSRange } from "vscode";
 import { CharacterTokenType, EntityTokenType, EscapedCharacterTokenType, KeywordTokenType, LiteralTokenType, MetaTokenType, OperatorTokenType, TokenType, TokenTypeIndex, TypeOfTokenType } from "./renpy-tokens";
 import { TokenPattern, TokenRangePattern, TokenMatchPattern, TokenRepoPattern } from "./token-pattern-types";
 import { Vector } from "../utilities/vector";
+import { Stack } from "../utilities/stack";
 import { LogLevel, logMessage } from "../logger";
 import { EnumToString } from "../utilities/utils";
 
@@ -70,14 +72,16 @@ export class TokenPosition {
 }
 
 export class Token {
-    readonly tokenType: TokenType;
+    readonly type: TokenType;
+    readonly metaTokens: Vector<TokenType>;
     readonly startPos: TokenPosition;
     readonly endPos: TokenPosition;
 
     constructor(tokenType: TokenType, startPos: TokenPosition, endPos: TokenPosition) {
-        this.tokenType = tokenType;
+        this.type = tokenType;
         this.startPos = startPos;
         this.endPos = endPos;
+        this.metaTokens = new Vector<TokenType>();
     }
 
     public getVSCodeRange() {
@@ -96,39 +100,67 @@ export class Token {
     }
 
     public isKeyword() {
-        return this.tokenType >= TokenTypeIndex.KeywordStart && this.tokenType < TokenTypeIndex.EntityStart;
+        return this.type >= TokenTypeIndex.KeywordStart && this.type < TokenTypeIndex.EntityStart;
     }
 
     public isEntity() {
-        return this.tokenType >= TokenTypeIndex.EntityStart && this.tokenType < TokenTypeIndex.ConstantStart;
+        return this.type >= TokenTypeIndex.EntityStart && this.type < TokenTypeIndex.ConstantStart;
     }
 
     public isConstant() {
-        return this.tokenType >= TokenTypeIndex.ConstantStart && this.tokenType < TokenTypeIndex.OperatorsStart;
+        return this.type >= TokenTypeIndex.ConstantStart && this.type < TokenTypeIndex.OperatorsStart;
     }
 
     public isOperator() {
-        return this.tokenType >= TokenTypeIndex.OperatorsStart && this.tokenType < TokenTypeIndex.CharactersStart;
+        return this.type >= TokenTypeIndex.OperatorsStart && this.type < TokenTypeIndex.CharactersStart;
     }
 
     public isCharacter() {
-        return this.tokenType >= TokenTypeIndex.CharactersStart && this.tokenType < TokenTypeIndex.EscapedCharacterStart;
+        return this.type >= TokenTypeIndex.CharactersStart && this.type < TokenTypeIndex.EscapedCharacterStart;
     }
 
     public isEscapedCharacter() {
-        return this.tokenType >= TokenTypeIndex.EscapedCharacterStart && this.tokenType < TokenTypeIndex.MetaStart;
+        return this.type >= TokenTypeIndex.EscapedCharacterStart && this.type < TokenTypeIndex.MetaStart;
     }
 
     public isMetaToken() {
-        return this.tokenType >= TokenTypeIndex.MetaStart && this.tokenType < TokenTypeIndex.UnknownCharacterID;
+        return this.type >= TokenTypeIndex.MetaStart && this.type < TokenTypeIndex.UnknownCharacterID;
     }
 
     public isUnknownCharacter() {
-        return this.tokenType === CharacterTokenType.Unknown;
+        return this.type === CharacterTokenType.Unknown;
     }
 
     public isInvalid() {
-        return this.tokenType === MetaTokenType.Invalid;
+        return this.hasMetaToken(MetaTokenType.Invalid);
+    }
+
+    public addMetaToken() {
+        this.metaTokens.pushBack(this.type);
+    }
+
+    public removeMetaToken(metaToken: MetaTokenType) {
+        this.metaTokens.erase(metaToken);
+    }
+
+    public hasMetaToken(metaToken: MetaTokenType) {
+        return this.metaTokens.contains(metaToken);
+    }
+
+    public getValue(document: TextDocument) {
+        return document.getText(this.getVSCodeRange());
+    }
+
+    public toString() {
+        let metaTokenString = "";
+
+        if (!this.metaTokens.isEmpty()) {
+            this.metaTokens.forEach((metaToken) => {
+                metaTokenString += `, ${tokenTypeToString(metaToken)}`;
+            });
+        }
+
+        return `${tokenTypeToString(this.type)}${metaTokenString}: (${this.startPos.line + 1}, ${this.startPos.character + 1}) -> (${this.endPos.line + 1}, ${this.endPos.character + 1})`;
     }
 }
 
@@ -147,13 +179,16 @@ export function isRepoPattern(p: TokenPattern): p is TokenRepoPattern {
 export class TreeNode {
     public token: Token | null;
     public children: Vector<TreeNode>;
+    public parent: TreeNode | null;
 
     constructor(token: Token | null = null) {
         this.token = token;
         this.children = new Vector<TreeNode>();
+        this.parent = null;
     }
 
     public addChild(child: TreeNode): void {
+        child.parent = this;
         this.children.pushBack(child);
     }
 
@@ -191,6 +226,56 @@ export class TreeNode {
         });
         return count;
     }
+
+    /**
+     * Flatten the node by building a Vector of Token's.
+     * Each child token should be added to the vector, in the order they appear in the source code (aka. the token.startPos).
+     * The current token.type should be added to it's children, using the metaTokens field.
+     * We should ensure the entire range of the current token is covered.
+     * If it's not covered by all children, we should create a new token filling the gaps and assigning the current token type
+     */
+    public flatten(): Vector<Token> {
+        const tokens = new Vector<Token>();
+
+        // Step 2: Recursively flatten each child node and add its tokens to the vector
+        this.children.forEach((child) => {
+            const childTokens = child.flatten();
+            childTokens.forEach((token) => {
+                tokens.pushBack(token);
+            });
+        });
+
+        // Sort the tokens by their start position
+        tokens.sort((a, b) => a.startPos.charStartOffset - b.startPos.charStartOffset);
+
+        if (!this.token) {
+            return tokens;
+        }
+
+        // Step 3: Add the current token's type to its children using the metaTokens field
+        tokens.forEach((token) => {
+            token.metaTokens.pushBack(this.token!.type);
+        });
+
+        // Step 4: Ensure that the entire range of the current token is covered by its children
+        let currentEnd = this.token.startPos;
+        for (const token of tokens) {
+            const start = token.startPos;
+            if (start.charStartOffset > currentEnd.charStartOffset) {
+                // There is a gap between the current end position and the start of the next token range
+                const gapToken = new Token(this.token.type, currentEnd, start);
+                tokens.pushBack(gapToken);
+            }
+            currentEnd = currentEnd.charStartOffset > token.endPos.charStartOffset ? currentEnd : token.endPos;
+        }
+        if (currentEnd.charStartOffset < this.token.endPos.charStartOffset) {
+            // The last token range does not extend to the end of the match
+            const gapToken = new Token(this.token.type, currentEnd, this.token.endPos);
+            tokens.pushBack(gapToken);
+        }
+
+        return tokens;
+    }
 }
 
 export class TokenTree {
@@ -214,6 +299,125 @@ export class TokenTree {
 
     public count(): number {
         return this.root.count();
+    }
+
+    public getIterator(): TokenTreeIterator {
+        return new TokenTreeIterator(this.root);
+    }
+
+    public flatten(): Vector<Token> {
+        return this.root.flatten();
+    }
+}
+
+/**
+ * Special iterator type, where the iterator can be manipulated while iterating.
+ * This will allow us to advance based on conditions
+ */
+export class TokenTreeIterator {
+    private nodesToVisit: Stack<TreeNode> = new Stack<TreeNode>();
+    private blacklist: Set<TokenType> = new Set<TokenType>();
+
+    constructor(root: TreeNode) {
+        this.nodesToVisit.push(root);
+    }
+
+    /**
+     * Add a filter to the iterator. This will prevent the iterator from visiting nodes that match the filter.
+     */
+    public setFilter(blacklist: Set<TokenType>) {
+        this.blacklist = blacklist;
+    }
+
+    /**
+     * Returns the current filter
+     */
+    public getFilter() {
+        return this.blacklist;
+    }
+
+    /**
+     * Returns true if there are more nodes to visit
+     */
+    public hasNext() {
+        return !this.nodesToVisit.isEmpty();
+    }
+
+    /**
+     * Returns the current node
+     */
+    public get() {
+        return this.nodesToVisit.peek();
+    }
+
+    /**
+     * Advances the iterator to the next node
+     */
+    private nextNode() {
+        if (!this.hasNext()) {
+            throw new Error("nextNode() was called on an iterator that has no more nodes to visit.");
+        }
+
+        const node = this.nodesToVisit.pop() as TreeNode;
+
+        if (!node.children.isEmpty()) {
+            for (let i = node.children.size - 1; i >= 0; --i) {
+                this.nodesToVisit.push(node.children.at(i));
+            }
+        }
+    }
+
+    private isValidToken() {
+        return this.token !== null;
+    }
+
+    private isBlacklisted() {
+        return this.blacklist.has(this.token!.type);
+    }
+
+    public get token() {
+        return this.get()?.token ?? null;
+    }
+
+    /**
+     * Advances the iterator to the next node that has a valid token that is not blacklisted
+     */
+    public next() {
+        // Call next until we find a node that has a valid token
+        while (this.hasNext()) {
+            this.nextNode();
+
+            if (!this.isValidToken()) {
+                continue;
+            }
+            break;
+        }
+
+        // We can skip any child nodes of blacklisted tokens, since those would be the tokens that build up the blacklisted token
+        while (this.isBlacklisted() && this.hasNext()) {
+            this.skip();
+
+            // Make sure we have a valid token after skipping, otherwise try to find another valid token
+            if (!this.isValidToken()) {
+                this.next();
+            }
+        }
+    }
+
+    /**
+     * Skips the children of the current node
+     */
+    public skip() {
+        if (!this.hasNext()) {
+            throw new Error("skip() was called on an iterator that has no more nodes to visit.");
+        }
+        this.nodesToVisit.pop();
+    }
+
+    public clone() {
+        const newIterator = new TokenTreeIterator(new TreeNode());
+        newIterator.nodesToVisit = this.nodesToVisit.clone();
+        return newIterator;
     }
 }
 

@@ -1,66 +1,150 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+import { TextDocument } from "vscode";
 import { ExpressionNode } from "./ast-nodes";
 import { ExpressionRule } from "./grammar-rules";
-import { Token } from "./parser-test";
-import { TokenType } from "src/tokenizer/renpy-tokens";
+import { tokenizeDocument } from "../tokenizer/tokenizer";
+import { CharacterTokenType, MetaTokenType, TokenType } from "../tokenizer/renpy-tokens";
+import { Token, TokenPosition, TokenTreeIterator, tokenTypeToStringMap } from "../tokenizer/token-definitions";
+import { Vector } from "../utilities/vector";
+import { LogCategory, LogLevel, logCatMessage } from "../logger";
 
-export class ParserState {
-    private _tokens: Token[];
-    private _index: number;
-    private _scope: any[];
-    private _precedence: number;
+export const enum ParseErrorType {
+    UnexpectedToken,
+    UnexpectedEndOfFile,
+}
 
-    constructor(tokens: Token[]) {
-        this._tokens = tokens;
-        this._index = 0;
-        this._scope = [];
-        this._precedence = 0;
-    }
+export interface ParseError {
+    type: ParseErrorType;
+    currentToken: Token;
+    nextToken: Token;
+    expectedTokenType: TokenType | null;
+}
 
-    public peekToken(): Token {
-        if (this._index >= this._tokens.length) {
-            throw new Error("Unexpected end of input");
+export class DocumentParser {
+    private _it: TokenTreeIterator;
+    private _document: TextDocument;
+    private _currentToken: Token = null!;
+
+    private _errors: Vector<ParseError> = new Vector<ParseError>();
+
+    private INVALID_TOKEN = new Token(MetaTokenType.Invalid, new TokenPosition(0, 0, -1), new TokenPosition(0, 0, -1));
+
+    constructor(document: TextDocument) {
+        this._document = document;
+        const tree = tokenizeDocument(document);
+        const nodes = tree.flatten();
+
+        let printOut = "";
+        for (const node of nodes) {
+            printOut += node.toString() + "\n";
         }
-        return this._tokens[this._index];
+        logCatMessage(LogLevel.Info, LogCategory.Parser, printOut, true);
+
+        this._it = tree.getIterator();
+        this._it.setFilter(new Set([MetaTokenType.Comment, CharacterTokenType.Whitespace]));
+
+        // Advance so the iterator is pointing at the next token and our current token is the first token.
+        this.next();
+        this._currentToken = this.INVALID_TOKEN;
     }
 
-    public popToken(): Token {
-        if (this._index >= this._tokens.length) {
-            throw new Error("Unexpected end of input");
+    private addError(errorType: ParseErrorType, expectedToken: TokenType | null = null) {
+        this._errors.pushBack({
+            type: errorType,
+            currentToken: this.current(),
+            nextToken: this.peekNext(),
+            expectedTokenType: expectedToken,
+        });
+    }
+
+    public next() {
+        if (!this._it.hasNext()) {
+            this.addError(ParseErrorType.UnexpectedEndOfFile);
+            return;
         }
-        return this._tokens[this._index++];
+        this._currentToken = this._it.token!;
+        this._it.next();
     }
 
-    public popTokenChecked(tokenType: TokenType): Token {
-        const token = this.peekToken();
-        if (token.type !== tokenType) {
-            throw new Error(`Expected token type ${tokenType}, but got ${token.type}`);
+    public skipEmptyLines() {
+        while (this.test(CharacterTokenType.NewLine)) {
+            this.next();
         }
-        return this.popToken();
     }
 
-    public enterScope(scope: any): void {
-        this._scope.push(scope);
+    public hasNext(): boolean {
+        return this._it.hasNext();
     }
 
-    public exitScope(): any {
-        return this._scope.pop();
+    public skip() {
+        this._it.skip();
     }
 
-    public currentScope(): any {
-        return this._scope[this._scope.length - 1];
+    public currentTokenValue(): string {
+        return this.current().getValue(this._document);
     }
 
-    public setPrecedence(precedence: number): void {
-        this._precedence = precedence;
+    public currentTokenType() {
+        return this.current().type;
     }
 
-    public getPrecedence(): number {
-        return this._precedence;
+    public peekNextTokenType() {
+        return this.peekNext().type;
+    }
+
+    public current() {
+        return this._currentToken;
+    }
+
+    public peekNext() {
+        return this._it.token ?? this.INVALID_TOKEN;
+    }
+
+    public test(tokenType: TokenType) {
+        return this.peekNextTokenType() === tokenType;
+    }
+
+    public testValue(value: string) {
+        return this.peekNext()?.getValue(this._document) === value ?? false;
+    }
+
+    public require(tokenType: TokenType) {
+        if (this.test(tokenType)) {
+            this.next();
+            return true;
+        }
+        this.addError(ParseErrorType.UnexpectedToken, tokenType);
+        return false;
+    }
+
+    public optional(tokenType: TokenType): boolean {
+        if (this.test(tokenType)) {
+            this.next();
+            return true;
+        }
+        return false;
     }
 
     public parseExpression(): ExpressionNode | null {
         const rule = new ExpressionRule();
         return rule.parse(this);
+    }
+
+    public getErrorMessage(error: ParseError) {
+        switch (error.type) {
+            case ParseErrorType.UnexpectedEndOfFile:
+                return "Unexpected end of file";
+            case ParseErrorType.UnexpectedToken:
+                return `Expected token of type '${this.getTokenTypeString(error.expectedTokenType)}', but got '${this.getTokenTypeString(error.currentToken.type)}'`;
+        }
+    }
+
+    public getTokenTypeString(tokenType: TokenType | null) {
+        if (tokenType === null) {
+            return "None";
+        }
+
+        return tokenTypeToStringMap[tokenType];
     }
 }
 
