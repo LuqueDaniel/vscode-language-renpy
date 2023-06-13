@@ -3,7 +3,6 @@ import { Position, TextDocument, Range as VSRange } from "vscode";
 import { CharacterTokenType, EntityTokenType, EscapedCharacterTokenType, KeywordTokenType, LiteralTokenType, MetaTokenType, OperatorTokenType, TokenType, TokenTypeIndex, TypeOfTokenType } from "./renpy-tokens";
 import { TokenPattern, TokenRangePattern, TokenMatchPattern, TokenRepoPattern } from "./token-pattern-types";
 import { Vector } from "../utilities/vector";
-import { Stack } from "../utilities/stack";
 import { LogLevel, logMessage } from "../logger";
 import { EnumToString } from "../utilities/utils";
 
@@ -143,7 +142,7 @@ export class Token {
         this.metaTokens.erase(metaToken);
     }
 
-    public hasMetaToken(metaToken: MetaTokenType) {
+    public hasMetaToken(metaToken: TokenType) {
         return this.metaTokens.contains(metaToken);
     }
 
@@ -301,8 +300,8 @@ export class TokenTree {
         return this.root.count();
     }
 
-    public getIterator(): TokenTreeIterator {
-        return new TokenTreeIterator(this.root);
+    public getIterator(): TokenListIterator {
+        return new TokenListIterator(this.flatten());
     }
 
     public flatten(): Vector<Token> {
@@ -314,110 +313,83 @@ export class TokenTree {
  * Special iterator type, where the iterator can be manipulated while iterating.
  * This will allow us to advance based on conditions
  */
-export class TokenTreeIterator {
-    private nodesToVisit: Stack<TreeNode> = new Stack<TreeNode>();
-    private blacklist: Set<TokenType> = new Set<TokenType>();
+export class TokenListIterator {
+    private _tokens: Vector<Token>;
+    private _index = 0;
+    private _blacklist: Set<TokenType> = new Set<TokenType>();
 
-    constructor(root: TreeNode) {
-        this.nodesToVisit.push(root);
-    }
-
-    /**
-     * Add a filter to the iterator. This will prevent the iterator from visiting nodes that match the filter.
-     */
-    public setFilter(blacklist: Set<TokenType>) {
-        this.blacklist = blacklist;
-    }
-
-    /**
-     * Returns the current filter
-     */
-    public getFilter() {
-        return this.blacklist;
-    }
-
-    /**
-     * Returns true if there are more nodes to visit
-     */
-    public hasNext() {
-        return !this.nodesToVisit.isEmpty();
-    }
-
-    /**
-     * Returns the current node
-     */
-    public get() {
-        return this.nodesToVisit.peek();
-    }
-
-    /**
-     * Advances the iterator to the next node
-     */
-    private nextNode() {
-        if (!this.hasNext()) {
-            throw new Error("nextNode() was called on an iterator that has no more nodes to visit.");
-        }
-
-        const node = this.nodesToVisit.pop() as TreeNode;
-
-        if (!node.children.isEmpty()) {
-            for (let i = node.children.size - 1; i >= 0; --i) {
-                this.nodesToVisit.push(node.children.at(i));
-            }
-        }
-    }
-
-    private isValidToken() {
-        return this.token !== null;
-    }
-
-    private isBlacklisted() {
-        return this.blacklist.has(this.token!.type);
-    }
-
-    public get token() {
-        return this.get()?.token ?? null;
+    constructor(tokens: Vector<Token>) {
+        this._tokens = tokens;
     }
 
     /**
      * Advances the iterator to the next node that has a valid token that is not blacklisted
      */
     public next() {
-        // Call next until we find a node that has a valid token
-        while (this.hasNext()) {
-            this.nextNode();
-
-            if (!this.isValidToken()) {
-                continue;
-            }
-            break;
-        }
-
-        // We can skip any child nodes of blacklisted tokens, since those would be the tokens that build up the blacklisted token
-        while (this.isBlacklisted() && this.hasNext()) {
-            this.skip();
-
-            // Make sure we have a valid token after skipping, otherwise try to find another valid token
-            if (!this.isValidToken()) {
-                this.next();
-            }
-        }
-    }
-
-    /**
-     * Skips the children of the current node
-     */
-    public skip() {
         if (!this.hasNext()) {
-            throw new Error("skip() was called on an iterator that has no more nodes to visit.");
+            throw new Error("next() was called on an iterator that has no more nodes to visit.");
         }
-        this.nodesToVisit.pop();
+
+        // Move to the next node
+        this._index++;
+
+        // We should skip any nodes with blacklisted tokens
+        while (this.isBlacklisted() && this.hasNext()) {
+            this._index++;
+        }
     }
 
     public clone() {
-        const newIterator = new TokenTreeIterator(new TreeNode());
-        newIterator.nodesToVisit = this.nodesToVisit.clone();
+        const newIterator = new TokenListIterator(this._tokens);
+        newIterator._index = this._index;
+        newIterator._blacklist = new Set(this._blacklist);
         return newIterator;
+    }
+
+    public get token() {
+        return this._tokens.at(this._index);
+    }
+
+    public get tokenType() {
+        return this.token.type;
+    }
+
+    public get metaTokens() {
+        return this.token.metaTokens;
+    }
+
+    /**
+     * Check is the current token is blacklisted
+     */
+    private isBlacklisted() {
+        if (this._blacklist.has(this.tokenType)) {
+            return true;
+        }
+
+        return this.metaTokens.any((token) => {
+            return this._blacklist.has(token);
+        });
+    }
+
+    /**
+     * Add a filter to the iterator. This will prevent the iterator from visiting nodes that match the filter.
+     */
+    public setFilter(blacklist: Set<TokenType>) {
+        this._blacklist = blacklist;
+    }
+
+    /**
+     * Returns the current filter
+     */
+    public getFilter() {
+        return this._blacklist;
+    }
+
+    /**
+     * Returns true if there are more nodes to visit
+     */
+    public hasNext() {
+        return this._index < this._tokens.size - 1;
     }
 }
 
@@ -661,6 +633,7 @@ const tokenTypeDefinitions: EnumToString<TypeOfTokenType> = {
     CodeBlock: { name: "CodeBlock", value: MetaTokenType.CodeBlock },
     PythonLine: { name: "PythonLine", value: MetaTokenType.PythonLine },
     PythonBlock: { name: "PythonBlock", value: MetaTokenType.PythonBlock },
+    PythonExpression: { name: "PythonExpression", value: MetaTokenType.PythonExpression },
     Arguments: { name: "Arguments", value: MetaTokenType.Arguments },
 
     EmptyString: { name: "EmptyString", value: MetaTokenType.EmptyString },

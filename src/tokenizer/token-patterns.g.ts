@@ -21,8 +21,10 @@ RenpyPatterns.simpleExpression.patterns!.splice(4, 0, PythonPatterns.functionCal
 RenpyPatterns.keywords.patterns![1].patterns!.push(PythonPatterns.expression);
 RenpyPatterns.constantPlaceholder.captures![2].patterns!.push(PythonPatterns.expression);
 RenpyPatterns.pythonStatements.patterns![1].patterns!.push(PythonPatterns.python);
-RenpyPatterns.define.patterns!.splice(3, 0, PythonPatterns.expression);
-RenpyPatterns.defaultStatement.patterns!.splice(2, 0, PythonPatterns.expression);
+RenpyPatterns.define.patterns!.splice(2, 0, PythonPatterns.expression);
+RenpyPatterns.define.patterns![3].patterns!.splice(0, 0, PythonPatterns.expression);
+RenpyPatterns.defaultStatement.patterns!.splice(1, 0, PythonPatterns.expression);
+RenpyPatterns.defaultStatement.patterns![2].patterns!.splice(0, 0, PythonPatterns.expression);
 RenpyPatterns.oneLinePython.patterns!.splice(2, 0, PythonPatterns.expression);
 RenpyPatterns.sayStatements.patterns![0].endCaptures![3].patterns!.push(PythonPatterns.functionArguments);
 RenpyPatterns.sayStatements.patterns![1].endCaptures![3].patterns!.push(PythonPatterns.functionArguments);

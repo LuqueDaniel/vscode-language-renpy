@@ -288,6 +288,7 @@ export const enum MetaTokenType {
     CodeBlock,
     PythonLine,
     PythonBlock,
+    PythonExpression,
     Arguments,
 
     EmptyString,

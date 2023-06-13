@@ -912,22 +912,27 @@ export const pythonStatements: TokenPattern = {
 export const define: TokenPattern = {
     debugName: "define",
 
-    // Match begin and end of python one line statements
     begin: /(?<=^[ \t]*)(define)(?=[ \t])/dgm,
     beginCaptures: {
         1: { token: KeywordTokenType.Define, /*keyword.define.renpy*/ },
     },
     end: /$/gm,
     patterns: [
-        {
-            debugName: "define.patterns![0]",
-
-            // Type the first name as a variable (Probably not needed, but python doesn't seem to catch it)
-            token: EntityTokenType.VariableName, /*variable.other.renpy*/
-            match: /(?<!\.)\b([a-zA-Z_]\w*)(?=\s=\s)/g,
-        },
         numInt,
         strings,
+        {
+            debugName: "define.patterns![3]",
+
+            contentToken: MetaTokenType.PythonExpression, /*meta.python.expression.renpy*/
+            begin: /(\+=)|(\|=)|(=)/dg,
+            beginCaptures: {
+                1: { token: OperatorTokenType.PlusAssign, /*keyword.operator.plus.assign.renpy*/ },
+                2: { token: MetaTokenType.BitwiseOperatorKeyword, /*keyword.operator.bitwise.or.assign..renpy*/ },
+                3: { token: OperatorTokenType.Assignment, /*keyword.operator.assignment.renpy*/ },
+            },
+            end: /$/gm,
+            patterns: [whitespace]
+        },
         fallbackCharacters,
     ]
 };
@@ -935,21 +940,24 @@ export const define: TokenPattern = {
 export const defaultStatement: TokenPattern = {
     debugName: "defaultStatement",
 
-    // Match begin and end of python one line statements
     begin: /(?<=^[ \t]*)(default)(?=[ \t])/dgm,
     beginCaptures: {
         1: { token: KeywordTokenType.Default, /*keyword.default.renpy*/ },
     },
     end: /$/gm,
     patterns: [
-        {
-            debugName: "defaultStatement.patterns![0]",
-
-            // Type the first name as a variable (Probably not needed, but python doesn't seem to catch it)
-            token: EntityTokenType.VariableName, /*variable.other.renpy*/
-            match: /(?<!\.)\b([a-zA-Z_]\w*)(?=\s=\s)/g,
-        },
         strings,
+        {
+            debugName: "defaultStatement.patterns![2]",
+
+            contentToken: MetaTokenType.PythonExpression, /*meta.python.expression.renpy*/
+            begin: /=/dg,
+            beginCaptures: {
+                0: { token: OperatorTokenType.Assignment, /*keyword.operator.assignment.renpy*/ },
+            },
+            end: /$/gm,
+            patterns: [whitespace]
+        },
         whitespace,
     ]
 };
@@ -957,7 +965,6 @@ export const defaultStatement: TokenPattern = {
 export const oneLinePython: TokenPattern = {
     debugName: "oneLinePython",
 
-    // Match begin and end of python one line statements
     begin: /(?<=^[ \t]*)(\$)(?=[ \t])/dgm,
     beginCaptures: {
         1: { token: KeywordTokenType.DollarSign, /*keyword.dollar.sign.renpy*/ },

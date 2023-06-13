@@ -1,15 +1,11 @@
-import { CharacterTokenType, LiteralTokenType } from "../tokenizer/renpy-tokens";
-import { ASTNode, ExpressionNode, LiteralNode } from "./ast-nodes";
+import exp from "constants";
+import { CharacterTokenType, EntityTokenType, LiteralTokenType, MetaTokenType, TokenType } from "../tokenizer/renpy-tokens";
+import { ASTNode, AssignmentOperationNode, ExpressionNode, LiteralNode, VariableNode as VariableNameNode } from "./ast-nodes";
 import { DocumentParser } from "./parser";
 
-export enum Associativity {
-    Left,
-    Right,
-}
-
-export abstract class Rule {
+export abstract class GrammarRule<T extends ASTNode> {
     public abstract test(state: DocumentParser): boolean;
-    public abstract parse(state: DocumentParser): ASTNode | null;
+    public abstract parse(state: DocumentParser): T | null;
 }
 
 /**
@@ -18,10 +14,10 @@ export abstract class Rule {
  *   | ParenthesizedExpression
  *   ;
  */
-export class ExpressionRule extends Rule {
-    rules: Rule[] = [new ParenthesizedExpressionRule(), new LiteralRule()];
+export class ExpressionRule extends GrammarRule<ExpressionNode> {
+    rules = [new ParenthesizedExpressionRule(), new LiteralRule()];
 
-    public test(state: DocumentParser): boolean {
+    public test(state: DocumentParser) {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return true;
@@ -31,10 +27,10 @@ export class ExpressionRule extends Rule {
         return false;
     }
 
-    public parse(state: DocumentParser): ExpressionNode | null {
+    public parse(state: DocumentParser) {
         for (const rule of this.rules) {
             if (rule.test(state)) {
-                return rule.parse(state) as ExpressionNode;
+                return rule.parse(state);
             }
         }
 
@@ -47,25 +43,16 @@ export class ExpressionRule extends Rule {
  *   : '(' Expression ')'
  *   ;
  */
-export class ParenthesizedExpressionRule extends Rule {
-    public test(state: DocumentParser): boolean {
+export class ParenthesizedExpressionRule extends GrammarRule<ExpressionNode> {
+    private expressionParser = new ExpressionRule();
+
+    public test(state: DocumentParser) {
         return state.test(CharacterTokenType.OpenParentheses);
     }
 
-    public parse(state: DocumentParser): ExpressionNode | null {
+    public parse(state: DocumentParser) {
         state.next();
-
-        const expression = state.parseExpression();
-        if (expression === null) {
-            return null;
-        }
-
-        state.next();
-        if (state.require(CharacterTokenType.CloseParentheses)) {
-            return null;
-        }
-
-        return expression;
+        return null;
     }
 }
 
@@ -116,16 +103,31 @@ export class ParenthesizedExpressionRule extends Rule {
     }
 }*/
 
+export class PythonExpressionRule extends GrammarRule<ExpressionNode> {
+    public test(state: DocumentParser) {
+        return state.test(MetaTokenType.PythonExpression);
+    }
+
+    public parse(state: DocumentParser) {
+        let expression = "";
+        while (state.test(MetaTokenType.PythonExpression)) {
+            state.next();
+            expression += state.currentValue();
+        }
+        return new LiteralNode(expression);
+    }
+}
+
 /**
  * Literal
  *   : IntegerLiteral
  *   | FloatLiteral
  *   ;
  */
-export class LiteralRule extends Rule {
-    rules: Rule[] = [new IntegerLiteralRule(), new FloatLiteralRule()];
+export class LiteralRule extends GrammarRule<ExpressionNode> {
+    rules = [new IntegerLiteralRule(), new FloatLiteralRule()];
 
-    public test(state: DocumentParser): boolean {
+    public test(state: DocumentParser) {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return true;
@@ -135,7 +137,7 @@ export class LiteralRule extends Rule {
         return false;
     }
 
-    public parse(state: DocumentParser): LiteralNode | null {
+    public parse(state: DocumentParser) {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return rule.parse(state) as LiteralNode;
@@ -151,14 +153,14 @@ export class LiteralRule extends Rule {
  *   : LiteralTokenType.Integer
  *   ;
  */
-export class IntegerLiteralRule extends Rule {
-    public test(state: DocumentParser): boolean {
+export class IntegerLiteralRule extends GrammarRule<LiteralNode> {
+    public test(state: DocumentParser) {
         return state.test(LiteralTokenType.Integer);
     }
 
-    public parse(state: DocumentParser): LiteralNode | null {
-        state.require(LiteralTokenType.Integer);
-        return new LiteralNode(state.currentTokenValue());
+    public parse(state: DocumentParser) {
+        state.requireToken(LiteralTokenType.Integer);
+        return new LiteralNode(state.currentValue());
     }
 }
 
@@ -167,44 +169,65 @@ export class IntegerLiteralRule extends Rule {
  *  : LiteralTokenType.Float
  * ;
  * */
-export class FloatLiteralRule extends Rule {
-    public test(state: DocumentParser): boolean {
-        return state.test(LiteralTokenType.Float);
+export class FloatLiteralRule extends GrammarRule<LiteralNode> {
+    public test(parser: DocumentParser) {
+        return parser.test(LiteralTokenType.Float);
     }
 
-    public parse(state: DocumentParser): LiteralNode | null {
-        state.require(LiteralTokenType.Float);
-        return new LiteralNode(state.currentTokenValue());
+    public parse(parser: DocumentParser) {
+        parser.requireToken(LiteralTokenType.Float);
+        return new LiteralNode(parser.currentValue());
     }
 }
 
-/*export class VariableRule extends Rule {
-    public parse(state: ParserState): VariableNode | null {
-        const token = state.popToken();
-        if (token.type != TokenType.Identifier) {
+export class VariableNameRule extends GrammarRule<VariableNameNode> {
+    public test(parser: DocumentParser) {
+        return parser.test(EntityTokenType.VariableName);
+    }
+
+    public parse(parser: DocumentParser) {
+        parser.requireToken(EntityTokenType.VariableName);
+        return new VariableNameNode(parser.currentValue());
+    }
+}
+
+export class AssignmentOperationRule extends GrammarRule<AssignmentOperationNode> {
+    private _leftParser: GrammarRule<ExpressionNode>;
+    private _operators: TokenType[];
+    private _rightParser: GrammarRule<ExpressionNode>;
+
+    constructor(leftParser: GrammarRule<ExpressionNode>, operators: TokenType[], rightParser: GrammarRule<ExpressionNode>) {
+        super();
+        this._leftParser = leftParser;
+        this._operators = operators;
+        this._rightParser = rightParser;
+    }
+
+    public test(parser: DocumentParser) {
+        return this._leftParser.test(parser);
+    }
+
+    public parse(parser: DocumentParser) {
+        const left = parser.require(this._leftParser);
+        if (left === null) {
             return null;
         }
 
-        return new VariableNode(token.value);
-    }
-}*/
+        if (!parser.anyOfToken(this._operators)) {
+            return null;
+        }
+        const operator = parser.current().type;
 
-/*export class StatementRule extends Rule {
-    public parse(state: ParserState): StatementNode | null {
-        const rules: Rule[] = [new IfStatementRule(), new WhileStatementRule(), new AssignmentStatementRule(), new ExpressionStatementRule()];
-
-        for (const rule of rules) {
-            const node = rule.match(state);
-            if (node !== null) {
-                return node;
-            }
+        const right = parser.require(this._rightParser);
+        if (right === null) {
+            return null;
         }
 
-        return null;
+        return new AssignmentOperationNode(left, operator, right);
     }
 }
 
-export class IfStatementRule extends Rule {
+/*export class IfStatementRule extends Rule {
     public parse(state: ParserState): IfStatementNode | null {
         return null;
     }

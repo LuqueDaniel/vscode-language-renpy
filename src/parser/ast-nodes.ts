@@ -1,9 +1,19 @@
-import { TokenType } from "src/tokenizer/renpy-tokens";
+import { TokenType } from "../tokenizer/renpy-tokens";
+import { Vector } from "../utilities/vector";
 
 export abstract class ASTNode {}
+export abstract class StatementNode extends ASTNode {}
+export abstract class ExpressionNode extends ASTNode {}
 
-export class StatementNode extends ASTNode {}
-export class ExpressionNode extends ASTNode {}
+export class AST {
+    public nodes: Vector<ASTNode> = new Vector<ASTNode>();
+
+    public append(node: ASTNode | null) {
+        if (node !== null) {
+            this.nodes.pushBack(node);
+        }
+    }
+}
 
 export class IfStatementNode extends StatementNode {
     public condition: ExpressionNode;
@@ -91,6 +101,10 @@ export class LiteralNode extends ExpressionNode {
         super();
         this.value = value;
     }
+
+    public toString() {
+        return this.value.toString();
+    }
 }
 
 export class VariableNode extends ExpressionNode {
@@ -99,5 +113,44 @@ export class VariableNode extends ExpressionNode {
     constructor(name: string) {
         super();
         this.name = name;
+    }
+
+    public toString() {
+        return this.name;
+    }
+}
+
+export class AssignmentOperationNode extends ExpressionNode {
+    public left: ExpressionNode;
+    public operation: TokenType;
+    public right: ExpressionNode;
+
+    constructor(variable: ExpressionNode, operation: TokenType, value: ExpressionNode) {
+        super();
+        this.left = variable;
+        this.operation = operation;
+        this.right = value;
+    }
+}
+
+export class DefineStatementNode extends StatementNode {
+    public assignmentOperation: AssignmentOperationNode | null;
+    public offset: LiteralNode;
+
+    constructor(offset: LiteralNode, assignmentOperation: AssignmentOperationNode | null) {
+        super();
+        this.offset = offset;
+        this.assignmentOperation = assignmentOperation;
+    }
+}
+
+export class DefaultStatementNode extends StatementNode {
+    public assignmentOperation: AssignmentOperationNode | null;
+    public offset: LiteralNode;
+
+    constructor(offset: LiteralNode, assignmentOperation: AssignmentOperationNode | null) {
+        super();
+        this.offset = offset;
+        this.assignmentOperation = assignmentOperation;
     }
 }

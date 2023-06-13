@@ -1,7 +1,7 @@
 import { DocumentParser } from "./parser";
-import { KeywordTokenType } from "../tokenizer/renpy-tokens";
 import { window } from "vscode";
-import { DefineStatementRule } from "./renpy-grammar-rules";
+import { RenpyStatementRule } from "./renpy-grammar-rules";
+import { AST } from "./ast-nodes";
 
 export function testParser() {
     const activeEditor = window.activeTextEditor;
@@ -10,16 +10,23 @@ export function testParser() {
     }
 
     const state = new DocumentParser(activeEditor.document);
+    const statementParser = new RenpyStatementRule();
+    const ast = new AST();
 
     while (state.hasNext()) {
         state.skipEmptyLines();
 
-        if (DefineStatementRule.test(state)) {
-            DefineStatementRule.parse(state);
+        if (statementParser.test(state)) {
+            ast.append(statementParser.parse(state));
+            state.expectEOL();
         }
 
-        state.next();
+        if (state.hasNext()) {
+            state.next();
+        }
     }
+
+    state.printErrors();
 
     /*const rule = new ExpressionRule();
     const ast = rule.parse(state);

@@ -430,6 +430,7 @@ ${(decoration.hoverMessage as MarkdownString).value}`
             case MetaTokenType.CodeBlock:
             case MetaTokenType.PythonLine:
             case MetaTokenType.PythonBlock:
+            case MetaTokenType.PythonExpression:
             case MetaTokenType.Arguments:
             case MetaTokenType.EmptyString:
             case MetaTokenType.StringTag:

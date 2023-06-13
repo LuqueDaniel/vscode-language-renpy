@@ -1,15 +1,16 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { TextDocument } from "vscode";
-import { ExpressionNode } from "./ast-nodes";
-import { ExpressionRule } from "./grammar-rules";
+import { ASTNode, ExpressionNode } from "./ast-nodes";
+import { ExpressionRule, GrammarRule } from "./grammar-rules";
 import { tokenizeDocument } from "../tokenizer/tokenizer";
 import { CharacterTokenType, MetaTokenType, TokenType } from "../tokenizer/renpy-tokens";
-import { Token, TokenPosition, TokenTreeIterator, tokenTypeToStringMap } from "../tokenizer/token-definitions";
+import { Token, TokenPosition, TokenListIterator, tokenTypeToStringMap } from "../tokenizer/token-definitions";
 import { Vector } from "../utilities/vector";
 import { LogCategory, LogLevel, logCatMessage } from "../logger";
 
 export const enum ParseErrorType {
     UnexpectedToken,
+    UnexpectedEndOfLine,
     UnexpectedEndOfFile,
 }
 
@@ -21,7 +22,7 @@ export interface ParseError {
 }
 
 export class DocumentParser {
-    private _it: TokenTreeIterator;
+    private _it: TokenListIterator;
     private _document: TextDocument;
     private _currentToken: Token = null!;
 
@@ -31,16 +32,7 @@ export class DocumentParser {
 
     constructor(document: TextDocument) {
         this._document = document;
-        const tree = tokenizeDocument(document);
-        const nodes = tree.flatten();
-
-        let printOut = "";
-        for (const node of nodes) {
-            printOut += node.toString() + "\n";
-        }
-        logCatMessage(LogLevel.Info, LogCategory.Parser, printOut, true);
-
-        this._it = tree.getIterator();
+        this._it = tokenizeDocument(document).getIterator();
         this._it.setFilter(new Set([MetaTokenType.Comment, CharacterTokenType.Whitespace]));
 
         // Advance so the iterator is pointing at the next token and our current token is the first token.
@@ -55,6 +47,12 @@ export class DocumentParser {
             nextToken: this.peekNext(),
             expectedTokenType: expectedToken,
         });
+    }
+
+    public printErrors() {
+        for (const error of this._errors) {
+            logCatMessage(LogLevel.Error, LogCategory.Parser, this.getErrorMessage(error));
+        }
     }
 
     public next() {
@@ -72,24 +70,18 @@ export class DocumentParser {
         }
     }
 
+    public skipToEOL() {
+        while (!this.test(CharacterTokenType.NewLine)) {
+            this.next();
+        }
+    }
+
     public hasNext(): boolean {
         return this._it.hasNext();
     }
 
-    public skip() {
-        this._it.skip();
-    }
-
-    public currentTokenValue(): string {
+    public currentValue(): string {
         return this.current().getValue(this._document);
-    }
-
-    public currentTokenType() {
-        return this.current().type;
-    }
-
-    public peekNextTokenType() {
-        return this.peekNext().type;
     }
 
     public current() {
@@ -101,14 +93,14 @@ export class DocumentParser {
     }
 
     public test(tokenType: TokenType) {
-        return this.peekNextTokenType() === tokenType;
+        return this.peekNext().type === tokenType || this.peekNext().hasMetaToken(tokenType);
     }
 
     public testValue(value: string) {
         return this.peekNext()?.getValue(this._document) === value ?? false;
     }
 
-    public require(tokenType: TokenType) {
+    public requireToken(tokenType: TokenType) {
         if (this.test(tokenType)) {
             this.next();
             return true;
@@ -117,7 +109,15 @@ export class DocumentParser {
         return false;
     }
 
-    public optional(tokenType: TokenType): boolean {
+    public expectEOL() {
+        if (!this.test(CharacterTokenType.NewLine)) {
+            this.addError(ParseErrorType.UnexpectedEndOfLine);
+        }
+        this.skipToEOL();
+        return this.test(CharacterTokenType.NewLine);
+    }
+
+    public optionalToken(tokenType: TokenType) {
         if (this.test(tokenType)) {
             this.next();
             return true;
@@ -125,9 +125,36 @@ export class DocumentParser {
         return false;
     }
 
-    public parseExpression(): ExpressionNode | null {
-        const rule = new ExpressionRule();
+    public anyOfToken(tokenTypes: TokenType[]) {
+        for (const tokenType of tokenTypes) {
+            if (this.test(tokenType)) {
+                this.next();
+                return true;
+            }
+        }
+        this.addError(ParseErrorType.UnexpectedToken);
+        return false;
+    }
+
+    public optional<T extends ASTNode>(rule: GrammarRule<T>) {
+        if (!rule.test(this)) {
+            return null;
+        }
         return rule.parse(this);
+    }
+
+    public require<T extends ASTNode>(rule: GrammarRule<T>) {
+        return rule.parse(this);
+    }
+
+    public anyOf<T extends ASTNode>(rules: GrammarRule<T>[]) {
+        for (const rule of rules) {
+            if (rule.test(this)) {
+                return rule.parse(this);
+            }
+        }
+        this.addError(ParseErrorType.UnexpectedEndOfLine);
+        return null;
     }
 
     public getErrorMessage(error: ParseError) {
@@ -135,7 +162,9 @@ export class DocumentParser {
             case ParseErrorType.UnexpectedEndOfFile:
                 return "Unexpected end of file";
             case ParseErrorType.UnexpectedToken:
-                return `Expected token of type '${this.getTokenTypeString(error.expectedTokenType)}', but got '${this.getTokenTypeString(error.currentToken.type)}'`;
+                return `Expected token of type '${this.getTokenTypeString(error.expectedTokenType)}', but got '${this.getTokenTypeString(error.currentToken.type)}'\n\tat: ${error.currentToken.startPos.toString()}`;
+            case ParseErrorType.UnexpectedEndOfLine:
+                return `Unexpected end of line. \n\tat: ${error.currentToken.startPos.toString()}`;
         }
     }
 
