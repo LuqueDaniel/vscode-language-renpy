@@ -1,7 +1,34 @@
+import { tokenTypeToString } from "../tokenizer/token-definitions";
 import { TokenType } from "../tokenizer/renpy-tokens";
 import { Vector } from "../utilities/vector";
+import { Range as VSRange } from "vscode";
 
-export abstract class ASTNode {}
+export abstract class ASTNode {
+    private static _printIndent = 0;
+    public location: VSRange;
+
+    constructor(location: VSRange) {
+        this.location = location;
+    }
+
+    public toString(): string {
+        const object = { type: this.constructor.name, ...this };
+        let output = "{\n";
+        ASTNode._printIndent += 2;
+        Object.entries(object).forEach(([key, v]) => {
+            output += " ".repeat(ASTNode._printIndent);
+            const tokenString = tokenTypeToString(v);
+            const value = tokenString || v;
+            output += `${key}: ${value}\n`;
+        });
+        ASTNode._printIndent -= 2;
+        output += " ".repeat(ASTNode._printIndent);
+        output += "}";
+        return output;
+    }
+
+    public abstract process(): void;
+}
 export abstract class StatementNode extends ASTNode {}
 export abstract class ExpressionNode extends ASTNode {}
 
@@ -12,6 +39,10 @@ export class AST {
         if (node !== null) {
             this.nodes.pushBack(node);
         }
+    }
+
+    public toString(): string {
+        return this.nodes.toString();
     }
 }
 
@@ -59,6 +90,17 @@ export class ExpressionStatementNode extends StatementNode {
     }
 }
 
+export class FunctionDefinitionNode extends StatementNode {
+    public name: string;
+    public args: ExpressionNode[];
+
+    constructor(name: string, args: ExpressionNode[]) {
+        super();
+        this.name = name;
+        this.args = args;
+    }
+}
+
 export class FunctionCallNode extends StatementNode {
     public name: string;
     public args: ExpressionNode[];
@@ -67,6 +109,17 @@ export class FunctionCallNode extends StatementNode {
         super();
         this.name = name;
         this.args = args;
+    }
+}
+
+export class ClassDefinitionNode extends StatementNode {
+    public name: string;
+    public body: StatementNode[];
+
+    constructor(name: string, body: StatementNode[]) {
+        super();
+        this.name = name;
+        this.body = body;
     }
 }
 
@@ -102,10 +155,6 @@ export class LiteralNode extends ExpressionNode {
         super();
         this.value = value;
     }
-
-    public override toString() {
-        return this.value.toString();
-    }
 }
 
 export class VariableNode extends ExpressionNode {
@@ -114,10 +163,6 @@ export class VariableNode extends ExpressionNode {
     constructor(name: string) {
         super();
         this.name = name;
-    }
-
-    public override toString() {
-        return this.name;
     }
 }
 

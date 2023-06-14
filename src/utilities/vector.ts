@@ -265,6 +265,13 @@ export class Vector<T> implements Iterable<T> {
     }
 
     /**
+     * Calls to string on each item in the vector and joins the results
+     */
+    public toString() {
+        return `[${this.toArray().toString()}]`;
+    }
+
+    /**
      * Remove all items from the vector
      * @param shrink If true it will also shrink the internal memory buffer to zero
      */
@@ -278,7 +285,9 @@ export class Vector<T> implements Iterable<T> {
         this.headRef = null;
         this.tailRef = null;
 
-        if (shrink) this.shrink();
+        if (shrink) {
+            this.shrink();
+        }
     }
 
     /**
