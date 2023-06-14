@@ -1,4 +1,3 @@
-import exp from "constants";
 import { CharacterTokenType, EntityTokenType, LiteralTokenType, MetaTokenType, TokenType } from "../tokenizer/renpy-tokens";
 import { ASTNode, AssignmentOperationNode, ExpressionNode, LiteralNode, VariableNode as VariableNameNode } from "./ast-nodes";
 import { DocumentParser } from "./parser";
@@ -15,7 +14,7 @@ export abstract class GrammarRule<T extends ASTNode> {
  *   ;
  */
 export class ExpressionRule extends GrammarRule<ExpressionNode> {
-    rules = [new ParenthesizedExpressionRule(), new LiteralRule()];
+    rules = [new LiteralRule(), new ParenthesizedExpressionRule()];
 
     public test(state: DocumentParser) {
         for (const rule of this.rules) {
@@ -27,7 +26,7 @@ export class ExpressionRule extends GrammarRule<ExpressionNode> {
         return false;
     }
 
-    public parse(state: DocumentParser) {
+    public parse(state: DocumentParser): ExpressionNode | LiteralNode | null {
         for (const rule of this.rules) {
             if (rule.test(state)) {
                 return rule.parse(state);
@@ -51,8 +50,10 @@ export class ParenthesizedExpressionRule extends GrammarRule<ExpressionNode> {
     }
 
     public parse(state: DocumentParser) {
-        state.next();
-        return null;
+        state.requireToken(CharacterTokenType.OpenParentheses);
+        const expression = this.expressionParser.parse(state);
+        state.requireToken(CharacterTokenType.CloseParentheses);
+        return expression;
     }
 }
 

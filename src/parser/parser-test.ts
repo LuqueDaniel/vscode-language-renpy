@@ -2,14 +2,17 @@ import { DocumentParser } from "./parser";
 import { window } from "vscode";
 import { RenpyStatementRule } from "./renpy-grammar-rules";
 import { AST } from "./ast-nodes";
+import { LogCategory, LogLevel, logCatMessage } from "../logger";
 
-export function testParser() {
+export async function testParser() {
     const activeEditor = window.activeTextEditor;
-    if (!activeEditor) {
+    if (!activeEditor || activeEditor.document.languageId !== "renpy") {
         return;
     }
 
     const state = new DocumentParser(activeEditor.document);
+    await state.initialize();
+
     const statementParser = new RenpyStatementRule();
     const ast = new AST();
 
@@ -27,9 +30,10 @@ export function testParser() {
     }
 
     state.printErrors();
+    logCatMessage(LogLevel.Info, LogCategory.Parser, JSON.stringify(ast, null, 2), true);
 
     /*const rule = new ExpressionRule();
     const ast = rule.parse(state);
 
-    logCatMessage(LogLevel.Info, LogCategory.Parser, JSON.stringify(ast, null, 2), true);*/
+    */
 }

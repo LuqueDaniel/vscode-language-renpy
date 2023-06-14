@@ -94,15 +94,16 @@ export class UnaryOperationNode extends ExpressionNode {
     }
 }
 
+type LiteralValue = string | number | boolean;
 export class LiteralNode extends ExpressionNode {
-    public value: any;
+    public value: LiteralValue;
 
-    constructor(value: any) {
+    constructor(value: LiteralValue) {
         super();
         this.value = value;
     }
 
-    public toString() {
+    public override toString() {
         return this.value.toString();
     }
 }
@@ -115,7 +116,7 @@ export class VariableNode extends ExpressionNode {
         this.name = name;
     }
 
-    public toString() {
+    public override toString() {
         return this.name;
     }
 }

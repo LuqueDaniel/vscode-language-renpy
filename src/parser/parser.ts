@@ -1,13 +1,14 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { TextDocument } from "vscode";
-import { ASTNode, ExpressionNode } from "./ast-nodes";
-import { ExpressionRule, GrammarRule } from "./grammar-rules";
-import { tokenizeDocument } from "../tokenizer/tokenizer";
+import { ASTNode } from "./ast-nodes";
+import { GrammarRule } from "./grammar-rules";
+import { Tokenizer } from "../tokenizer/tokenizer";
 import { CharacterTokenType, MetaTokenType, TokenType } from "../tokenizer/renpy-tokens";
 import { Token, TokenPosition, TokenListIterator, tokenTypeToStringMap } from "../tokenizer/token-definitions";
 import { Vector } from "../utilities/vector";
 import { LogCategory, LogLevel, logCatMessage } from "../logger";
 
+// eslint-disable-next-line no-shadow
 export const enum ParseErrorType {
     UnexpectedToken,
     UnexpectedEndOfLine,
@@ -22,7 +23,7 @@ export interface ParseError {
 }
 
 export class DocumentParser {
-    private _it: TokenListIterator;
+    private _it: TokenListIterator = null!;
     private _document: TextDocument;
     private _currentToken: Token = null!;
 
@@ -30,9 +31,21 @@ export class DocumentParser {
 
     private INVALID_TOKEN = new Token(MetaTokenType.Invalid, new TokenPosition(0, 0, -1), new TokenPosition(0, 0, -1));
 
+    private _parsed = false;
+
     constructor(document: TextDocument) {
         this._document = document;
-        this._it = tokenizeDocument(document).getIterator();
+    }
+
+    // TODO: This should not be user facing code, will lead to bugs. Same for the tokenizer.
+    public async initialize() {
+        if (this._parsed) {
+            throw new Error("DocumentParser.parse() called twice.");
+        }
+
+        this._parsed = true;
+        const tokens = await Tokenizer.tokenizeDocument(this._document);
+        this._it = tokens.getIterator();
         this._it.setFilter(new Set([MetaTokenType.Comment, CharacterTokenType.Whitespace]));
 
         // Advance so the iterator is pointing at the next token and our current token is the first token.
