@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { TextDocument } from "vscode";
+import { TextDocument, Location as VSLocation, Range as VSRange } from "vscode";
 import { ASTNode } from "./ast-nodes";
 import { GrammarRule } from "./grammar-rules";
 import { Tokenizer } from "../tokenizer/tokenizer";
@@ -35,6 +35,14 @@ export class DocumentParser {
 
     constructor(document: TextDocument) {
         this._document = document;
+    }
+
+    public locationFromCurrent(): VSLocation {
+        return new VSLocation(this._document.uri, this.current().getVSCodeRange());
+    }
+
+    public locationFromRange(range: VSRange): VSLocation {
+        return new VSLocation(this._document.uri, range);
     }
 
     // TODO: This should not be user facing code, will lead to bugs. Same for the tokenizer.
@@ -190,30 +198,7 @@ export class DocumentParser {
     }
 }
 
-/*class Parser2 {
-    private _variables: VariableBank;
-
-    constructor(variables: VariableBank) {
-        this._variables = variables;
-    }
-
-    public parse(tokens: Token[], errors: ParseError[]): IExpression {
-        let state = new ParserState(tokens);
-        return this.parseExpression(state, errors);
-    }
-
-    private parseExpression(state: ParserState, errors: ParseError[], precedence: number = 0): IExpression {
-        let rule = new ExpressionRule(precedence);
-        return rule.match(state);
-    }
-}*/
-
 /*
-interface ParseError {
-    message: string;
-    errorTokenIndex: number;
-}
-
 class Parser {
     private variables: VariableBank;
 

@@ -1,15 +1,19 @@
 import { tokenTypeToString } from "../tokenizer/token-definitions";
 import { TokenType } from "../tokenizer/renpy-tokens";
 import { Vector } from "../utilities/vector";
-import { Range as VSRange } from "vscode";
+import { Location as VSLocation, Range as VSRange } from "vscode";
+import { RpyProgram } from "src/interpreter/program";
+
+VSRange.prototype.toString = function () {
+    return `[L${this.start.line + 1}:C${this.start.character + 1}, L${this.end.line + 1}:C${this.end.character + 1}]`;
+};
+
+VSLocation.prototype.toString = function () {
+    return `${this.uri.toString()} @ ${this.range.toString()}`;
+};
 
 export abstract class ASTNode {
     private static _printIndent = 0;
-    public location: VSRange;
-
-    constructor(location: VSRange) {
-        this.location = location;
-    }
 
     public toString(): string {
         const object = { type: this.constructor.name, ...this };
@@ -18,7 +22,8 @@ export abstract class ASTNode {
         Object.entries(object).forEach(([key, v]) => {
             output += " ".repeat(ASTNode._printIndent);
             const tokenString = tokenTypeToString(v);
-            const value = tokenString || v;
+            const hasToString = v.toString !== Object.prototype.toString;
+            const value = tokenString || (hasToString ? v.toString() : JSON.stringify(v));
             output += `${key}: ${value}\n`;
         });
         ASTNode._printIndent -= 2;
@@ -27,9 +32,13 @@ export abstract class ASTNode {
         return output;
     }
 
-    public abstract process(): void;
+    // public abstract process(): void;
 }
-export abstract class StatementNode extends ASTNode {}
+export abstract class StatementNode extends ASTNode {
+    public process(program: RpyProgram) {
+        return; // Do nothing by default
+    }
+}
 export abstract class ExpressionNode extends ASTNode {}
 
 export class AST {
@@ -39,6 +48,14 @@ export class AST {
         if (node !== null) {
             this.nodes.pushBack(node);
         }
+    }
+
+    public process(program: RpyProgram) {
+        this.nodes.forEach((node) => {
+            if (node instanceof StatementNode) {
+                node.process(program);
+            }
+        });
     }
 
     public toString(): string {
@@ -91,33 +108,39 @@ export class ExpressionStatementNode extends StatementNode {
 }
 
 export class FunctionDefinitionNode extends StatementNode {
-    public name: string;
-    public args: ExpressionNode[];
+    public readonly srcLocation: VSLocation;
+    public readonly name: string;
+    public readonly args: ExpressionNode[];
 
-    constructor(name: string, args: ExpressionNode[]) {
+    constructor(srcLocation: VSLocation, name: string, args: ExpressionNode[]) {
         super();
+        this.srcLocation = srcLocation;
         this.name = name;
         this.args = args;
     }
 }
 
 export class FunctionCallNode extends StatementNode {
-    public name: string;
-    public args: ExpressionNode[];
+    public readonly srcLocation: VSLocation;
+    public readonly name: string;
+    public readonly args: ExpressionNode[];
 
-    constructor(name: string, args: ExpressionNode[]) {
+    constructor(srcLocation: VSLocation, name: string, args: ExpressionNode[]) {
         super();
+        this.srcLocation = srcLocation;
         this.name = name;
         this.args = args;
     }
 }
 
 export class ClassDefinitionNode extends StatementNode {
+    public readonly srcLocation: VSLocation;
     public name: string;
     public body: StatementNode[];
 
-    constructor(name: string, body: StatementNode[]) {
+    constructor(srcLocation: VSLocation, name: string, body: StatementNode[]) {
         super();
+        this.srcLocation = srcLocation;
         this.name = name;
         this.body = body;
     }
@@ -157,11 +180,13 @@ export class LiteralNode extends ExpressionNode {
     }
 }
 
-export class VariableNode extends ExpressionNode {
+export class IdentifierNode extends ExpressionNode {
+    public readonly srcLocation: VSLocation;
     public name: string;
 
-    constructor(name: string) {
+    constructor(srcLocation: VSLocation, name: string) {
         super();
+        this.srcLocation = srcLocation;
         this.name = name;
     }
 }
@@ -188,15 +213,52 @@ export class DefineStatementNode extends StatementNode {
         this.offset = offset;
         this.assignmentOperation = assignmentOperation;
     }
+
+    public override process(program: RpyProgram) {
+        if (this.assignmentOperation === null) {
+            throw new Error("Should remove the option for this to be null. Parser should error if it is null.");
+        }
+
+        if (!(this.assignmentOperation.left instanceof IdentifierNode)) {
+            throw new Error("Expected identifier node");
+        }
+
+        const variableName = this.assignmentOperation.left.name;
+        program.globalScope.defineSymbol(variableName, this.assignmentOperation.left.srcLocation);
+    }
 }
 
 export class DefaultStatementNode extends StatementNode {
-    public assignmentOperation: AssignmentOperationNode | null;
+    public assignmentOperation: AssignmentOperationNode;
     public offset: LiteralNode;
 
-    constructor(offset: LiteralNode, assignmentOperation: AssignmentOperationNode | null) {
+    constructor(offset: LiteralNode, assignmentOperation: AssignmentOperationNode) {
         super();
         this.offset = offset;
         this.assignmentOperation = assignmentOperation;
+    }
+
+    public override process(program: RpyProgram) {
+        if (!(this.assignmentOperation.left instanceof IdentifierNode)) {
+            throw new Error("Expected identifier node");
+        }
+
+        const variableName = this.assignmentOperation.left.name;
+        program.globalScope.defineSymbol(variableName, this.assignmentOperation.left.srcLocation);
+    }
+}
+
+export class SayStatementNode extends StatementNode {
+    public who: ExpressionNode | null;
+    public attributes: ExpressionNode | null;
+    public temporaryAttributes: ExpressionNode | null;
+    public what: LiteralNode;
+
+    constructor(who: ExpressionNode | null, attributes: ExpressionNode | null, temporaryAttributes: ExpressionNode | null, what: LiteralNode) {
+        super();
+        this.who = who;
+        this.attributes = attributes;
+        this.temporaryAttributes = temporaryAttributes;
+        this.what = what;
     }
 }

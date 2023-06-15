@@ -202,6 +202,14 @@ export class Vector<T> implements Iterable<T> {
         return false;
     }
 
+    public map<U>(callback: (item: T) => U) {
+        const result = new Vector<U>(this.itemCount);
+        for (let i = 0; i < this.itemCount; ++i) {
+            result.pushBack(callback(this.buffer[i] as T));
+        }
+        return result;
+    }
+
     /**
      * Swap the item at the specified index with the item at the back of the vector
      * @param index The index of the item to swap to the back
