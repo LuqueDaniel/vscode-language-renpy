@@ -1,13 +1,14 @@
 import { EntityTokenType, KeywordTokenType, MetaTokenType, OperatorTokenType } from "../tokenizer/renpy-tokens";
 import { DefaultStatementNode, DefineStatementNode, ExpressionNode, LiteralNode, SayStatementNode, StatementNode } from "./ast-nodes";
-import { AssignmentOperationRule, GrammarRule, IntegerLiteralRule, PythonExpressionRule, IdentifierRule, StringLiteralRule, SimpleExpressionRule } from "./grammar-rules";
+import { AssignmentOperationRule, GrammarRule, IntegerLiteralRule, PythonExpressionRule, IdentifierRule, StringLiteralRule, SimpleExpressionRule, MemberAccessExpressionRule } from "./grammar-rules";
 import { DocumentParser } from "./parser";
 
 const integerParser = new IntegerLiteralRule();
 const stringParser = new StringLiteralRule();
-const variableNameParser = new IdentifierRule();
+const identifierParser = new IdentifierRule();
 const pythonExpressionParser = new PythonExpressionRule();
 const simpleExpressionParser = new SimpleExpressionRule();
+const memberAccessParser = new MemberAccessExpressionRule();
 
 /**
  * define_operator = "+=" | "|=" | "=";
@@ -17,7 +18,7 @@ const simpleExpressionParser = new SimpleExpressionRule();
  */
 export class DefineStatementRule extends GrammarRule<DefineStatementNode> {
     private allowedOperators = [OperatorTokenType.PlusAssign, OperatorTokenType.BitwiseOrAssign, OperatorTokenType.Assignment];
-    private assignmentOperation = new AssignmentOperationRule(variableNameParser, this.allowedOperators, pythonExpressionParser);
+    private assignmentOperation = new AssignmentOperationRule(identifierParser, this.allowedOperators, pythonExpressionParser);
 
     public test(state: DocumentParser): boolean {
         return state.test(KeywordTokenType.Define);
@@ -42,7 +43,7 @@ export class DefineStatementRule extends GrammarRule<DefineStatementNode> {
  * default = "default", INTEGER?, DOTTED_NAME, python_assignment_operation, NEWLINE;
  */
 export class DefaultStatementRule extends GrammarRule<DefaultStatementNode> {
-    private assignmentOperation = new AssignmentOperationRule(variableNameParser, [OperatorTokenType.Assignment], pythonExpressionParser);
+    private assignmentOperation = new AssignmentOperationRule(identifierParser, [OperatorTokenType.Assignment], pythonExpressionParser);
 
     public test(parser: DocumentParser): boolean {
         return parser.test(KeywordTokenType.Default);
@@ -78,6 +79,8 @@ export class SayStatementRule extends GrammarRule<StatementNode> {
     }
 
     public parse(parser: DocumentParser): StatementNode | null {
+        parser.debugPrintLine();
+
         const who = parser.optional(simpleExpressionParser);
         const attributes = parser.optional(this.sayAttributesParser);
         let temporaryAttributes: ExpressionNode | null = null;

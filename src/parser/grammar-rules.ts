@@ -1,5 +1,5 @@
 import { CharacterTokenType, EntityTokenType, LiteralTokenType, MetaTokenType, TokenType } from "../tokenizer/renpy-tokens";
-import { ASTNode, AssignmentOperationNode, ExpressionNode, LiteralNode, IdentifierNode } from "./ast-nodes";
+import { ASTNode, AssignmentOperationNode, ExpressionNode, LiteralNode, IdentifierNode, MemberAccessNode } from "./ast-nodes";
 import { DocumentParser } from "./parser";
 
 export abstract class GrammarRule<T extends ASTNode> {
@@ -120,20 +120,55 @@ export class PythonExpressionRule extends GrammarRule<ExpressionNode> {
 }
 
 /**
- * simple_expression = OPERATOR*, (PYTHON_STRING | NAME | FLOAT | parenthesized_python), [(".", NAME) | parenthesized_python]
+ * simple_expression
+ * : OPERATOR*, (PYTHON_STRING | NAME | FLOAT | parenthesized_python), [(".", NAME) | parenthesized_python]
+ * | identifier, [(".", NAME) | parenthesized_python]
+ * | member_access_expression
+ * ;
  */
 export class SimpleExpressionRule extends GrammarRule<ExpressionNode> {
-    public test(parser: DocumentParser) {
+    public test(parser: DocumentParser): boolean {
         return parser.test(MetaTokenType.SimpleExpression);
     }
 
-    public parse(parser: DocumentParser) {
+    public parse(parser: DocumentParser): ExpressionNode | null {
         let expression = "";
         while (parser.test(MetaTokenType.SimpleExpression)) {
             parser.next();
             expression += parser.currentValue();
         }
         return new LiteralNode(expression);
+    }
+}
+
+/** TODO: Allow other expressions than just identifiers
+ * MemberAccessExpression
+ *  : Identifier, { ".", Identifier }+
+ *  ;
+ */
+export class MemberAccessExpressionRule extends GrammarRule<IdentifierNode | MemberAccessNode> {
+    private identifierParser = new IdentifierRule();
+
+    public test(parser: DocumentParser): boolean {
+        return this.identifierParser.test(parser);
+    }
+
+    public parse(parser: DocumentParser): IdentifierNode | MemberAccessNode | null {
+        let left: IdentifierNode | MemberAccessNode | null = parser.require(this.identifierParser); // TODO: For now only support identifiers on the left side of the dot
+        if (!left) {
+            return null;
+        }
+
+        while (parser.test(CharacterTokenType.Dot)) {
+            parser.next();
+            const right = parser.require(this.identifierParser);
+            if (!right) {
+                return null;
+            }
+            left = new MemberAccessNode(left, right);
+        }
+
+        return left;
     }
 }
 
@@ -147,7 +182,7 @@ export class SimpleExpressionRule extends GrammarRule<ExpressionNode> {
 export class LiteralRule extends GrammarRule<ExpressionNode> {
     rules = [new IntegerLiteralRule(), new FloatLiteralRule(), new StringLiteralRule()];
 
-    public test(parser: DocumentParser) {
+    public test(parser: DocumentParser): boolean {
         for (const rule of this.rules) {
             if (rule.test(parser)) {
                 return true;
@@ -157,7 +192,7 @@ export class LiteralRule extends GrammarRule<ExpressionNode> {
         return false;
     }
 
-    public parse(parser: DocumentParser) {
+    public parse(parser: DocumentParser): LiteralNode | null {
         for (const rule of this.rules) {
             if (rule.test(parser)) {
                 return rule.parse(parser) as LiteralNode;
@@ -174,11 +209,11 @@ export class LiteralRule extends GrammarRule<ExpressionNode> {
  *   ;
  */
 export class IntegerLiteralRule extends GrammarRule<LiteralNode> {
-    public test(parser: DocumentParser) {
+    public test(parser: DocumentParser): boolean {
         return parser.test(LiteralTokenType.Integer);
     }
 
-    public parse(parser: DocumentParser) {
+    public parse(parser: DocumentParser): LiteralNode {
         parser.requireToken(LiteralTokenType.Integer);
         return new LiteralNode(parser.currentValue());
     }
@@ -190,11 +225,11 @@ export class IntegerLiteralRule extends GrammarRule<LiteralNode> {
  *   ;
  */
 export class StringLiteralRule extends GrammarRule<LiteralNode> {
-    public test(parser: DocumentParser) {
+    public test(parser: DocumentParser): boolean {
         return parser.test(LiteralTokenType.String);
     }
 
-    public parse(parser: DocumentParser) {
+    public parse(parser: DocumentParser): LiteralNode {
         parser.requireToken(LiteralTokenType.String);
         return new LiteralNode(parser.currentValue());
     }
@@ -206,23 +241,23 @@ export class StringLiteralRule extends GrammarRule<LiteralNode> {
  * ;
  * */
 export class FloatLiteralRule extends GrammarRule<LiteralNode> {
-    public test(parser: DocumentParser) {
+    public test(parser: DocumentParser): boolean {
         return parser.test(LiteralTokenType.Float);
     }
 
-    public parse(parser: DocumentParser) {
+    public parse(parser: DocumentParser): LiteralNode {
         parser.requireToken(LiteralTokenType.Float);
         return new LiteralNode(parser.currentValue());
     }
 }
 
 export class IdentifierRule extends GrammarRule<IdentifierNode> {
-    public test(parser: DocumentParser) {
-        return parser.test(EntityTokenType.VariableName);
+    public test(parser: DocumentParser): boolean {
+        return parser.test(EntityTokenType.Identifier);
     }
 
-    public parse(parser: DocumentParser) {
-        parser.requireToken(EntityTokenType.VariableName);
+    public parse(parser: DocumentParser): IdentifierNode {
+        parser.requireToken(EntityTokenType.Identifier);
         return new IdentifierNode(parser.locationFromCurrent(), parser.currentValue());
     }
 }
@@ -239,11 +274,11 @@ export class AssignmentOperationRule extends GrammarRule<AssignmentOperationNode
         this._rightParser = rightParser;
     }
 
-    public test(parser: DocumentParser) {
+    public test(parser: DocumentParser): boolean {
         return this._leftParser.test(parser);
     }
 
-    public parse(parser: DocumentParser) {
+    public parse(parser: DocumentParser): AssignmentOperationNode | null {
         const left = parser.require(this._leftParser);
         if (left === null) {
             return null;

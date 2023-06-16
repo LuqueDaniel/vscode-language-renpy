@@ -191,6 +191,20 @@ export class IdentifierNode extends ExpressionNode {
     }
 }
 
+/**
+ * Represents a member access operation, such as `foo.bar`, `get_foo().bar` or `foo.get_bar()`.
+ */
+export class MemberAccessNode extends ExpressionNode {
+    public left: IdentifierNode | MemberAccessNode;
+    public right: IdentifierNode | MemberAccessNode;
+
+    constructor(left: IdentifierNode | MemberAccessNode, right: IdentifierNode | MemberAccessNode) {
+        super();
+        this.left = left;
+        this.right = right;
+    }
+}
+
 export class AssignmentOperationNode extends ExpressionNode {
     public left: ExpressionNode;
     public operation: TokenType;

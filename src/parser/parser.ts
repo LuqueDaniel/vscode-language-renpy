@@ -157,18 +157,18 @@ export class DocumentParser {
         return false;
     }
 
-    public optional<T extends ASTNode>(rule: GrammarRule<T>) {
+    public optional<T extends ASTNode>(rule: GrammarRule<T>): T | null {
         if (!rule.test(this)) {
             return null;
         }
         return rule.parse(this);
     }
 
-    public require<T extends ASTNode>(rule: GrammarRule<T>) {
+    public require<T extends ASTNode>(rule: GrammarRule<T>): T | null {
         return rule.parse(this);
     }
 
-    public anyOf<T extends ASTNode>(rules: GrammarRule<T>[]) {
+    public anyOf<T extends ASTNode>(rules: GrammarRule<T>[]): T | null {
         for (const rule of rules) {
             if (rule.test(this)) {
                 return rule.parse(this);
@@ -176,6 +176,21 @@ export class DocumentParser {
         }
         this.addError(ParseErrorType.UnexpectedEndOfLine);
         return null;
+    }
+
+    /**
+     * Prints all token types from the current token to the end of the line.
+     */
+    public debugPrintLine() {
+        const itCopy = this._it.clone();
+        let output = "Next line tokens: [\n";
+        while (itCopy.hasNext() && itCopy.token.type !== CharacterTokenType.NewLine) {
+            output += `  ${itCopy.token.toString()},\n`;
+            itCopy.next();
+        }
+        output = output.slice(0, -2); // Remove the last comma and space.
+        output += "\n]";
+        logCatMessage(LogLevel.Debug, LogCategory.Parser, output);
     }
 
     public getErrorMessage(error: ParseError) {

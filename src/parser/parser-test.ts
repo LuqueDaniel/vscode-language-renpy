@@ -23,26 +23,26 @@ export async function testParser() {
         return;
     }
 
-    const state = new DocumentParser(activeEditor.document);
-    await state.initialize();
+    const parser = new DocumentParser(activeEditor.document);
+    await parser.initialize();
 
     const statementParser = new RenpyStatementRule();
     const ast = new AST();
 
-    while (state.hasNext()) {
-        state.skipEmptyLines();
+    while (parser.hasNext()) {
+        parser.skipEmptyLines();
 
-        if (statementParser.test(state)) {
-            ast.append(statementParser.parse(state));
-            state.expectEOL();
+        if (statementParser.test(parser)) {
+            ast.append(statementParser.parse(parser));
+            parser.expectEOL();
         }
 
-        if (state.hasNext()) {
-            state.next();
+        if (parser.hasNext()) {
+            parser.next();
         }
     }
 
-    state.printErrors();
+    parser.printErrors();
     logCatMessage(LogLevel.Info, LogCategory.Parser, ast.toString(), true);
 
     const program = new RpyProgram();

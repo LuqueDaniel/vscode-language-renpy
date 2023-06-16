@@ -395,7 +395,7 @@ ${(decoration.hoverMessage as MarkdownString).value}`
                 break;
 
             // Variables
-            case EntityTokenType.VariableName:
+            case EntityTokenType.Identifier:
             case EntityTokenType.StyleName:
             case EntityTokenType.ImageName:
             case EntityTokenType.TextName:
@@ -594,7 +594,7 @@ ${(decoration.hoverMessage as MarkdownString).value}`
 
             case CharacterTokenType.Whitespace:
             case CharacterTokenType.NewLine:
-            case CharacterTokenType.Period:
+            case CharacterTokenType.Dot:
             case CharacterTokenType.Colon:
             case CharacterTokenType.Semicolon:
             case CharacterTokenType.Comma:
