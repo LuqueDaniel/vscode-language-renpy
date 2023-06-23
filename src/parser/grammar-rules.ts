@@ -226,12 +226,23 @@ export class IntegerLiteralRule extends GrammarRule<LiteralNode> {
  */
 export class StringLiteralRule extends GrammarRule<LiteralNode> {
     public test(parser: DocumentParser): boolean {
-        return parser.test(LiteralTokenType.String);
+        return parser.test(MetaTokenType.StringBegin);
     }
 
-    public parse(parser: DocumentParser): LiteralNode {
-        parser.requireToken(LiteralTokenType.String);
-        return new LiteralNode(parser.currentValue());
+    public parse(parser: DocumentParser): LiteralNode | null {
+        if (!parser.requireToken(MetaTokenType.StringBegin)) {
+            return null;
+        }
+
+        let content = "";
+        if (parser.optionalToken(LiteralTokenType.String)) {
+            content = parser.currentValue();
+        }
+
+        if (!parser.requireToken(MetaTokenType.StringEnd)) {
+            return null;
+        }
+        return new LiteralNode(content);
     }
 }
 

@@ -198,9 +198,9 @@ export class DocumentParser {
             case ParseErrorType.UnexpectedEndOfFile:
                 return "Unexpected end of file";
             case ParseErrorType.UnexpectedToken:
-                return `Expected token of type '${this.getTokenTypeString(error.expectedTokenType)}', but got '${this.getTokenTypeString(error.currentToken.type)}'\n\tat: ${error.currentToken.startPos.toString()}`;
+                return `Expected token of type '${this.getTokenTypeString(error.expectedTokenType)}', but got '${this.getTokenTypeString(error.nextToken.type)}'\n\tat: ${error.nextToken.startPos}`;
             case ParseErrorType.UnexpectedEndOfLine:
-                return `Unexpected end of line. \n\tat: ${error.currentToken.startPos.toString()}`;
+                return `Unexpected end of line. \n\tat: ${error.nextToken.startPos}`;
         }
     }
 

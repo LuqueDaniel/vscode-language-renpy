@@ -68,6 +68,10 @@ export class TokenPosition {
         this.character = newValue.character;
         this.charStartOffset = newValue.charStartOffset;
     }
+
+    public toString() {
+        return `L${this.line + 1}:C${this.character + 1}`;
+    }
 }
 
 export class Token {
@@ -159,7 +163,7 @@ export class Token {
             });
         }
 
-        return `${tokenTypeToString(this.type)}${metaTokenString}: (${this.startPos.line + 1}, ${this.startPos.character + 1}) -> (${this.endPos.line + 1}, ${this.endPos.character + 1})`;
+        return `${tokenTypeToString(this.type)}${metaTokenString}: (${this.startPos}) -> (${this.endPos})`;
     }
 }
 
